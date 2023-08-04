@@ -164,10 +164,22 @@ class Pinecone(VectorStore):
         Returns:
             List of Documents most similar to the query and score for each
         """
-        docs_and_scores = self.similarity_search_with_score(
-            query, k=k, filter=filter, namespace=namespace, **kwargs
+        if namespace is None:
+            namespace = self._namespace
+        query_obj = self._embedding_function(query)
+        docs = []
+        results = self._index.query(
+            [query_obj],
+            top_k=k,
+            include_metadata=True,
+            namespace=namespace,
+            filter=filter,
         )
-        return [doc for doc, _ in docs_and_scores]
+        for res in results["matches"]:
+            metadata = res["metadata"]
+            text = metadata.pop(self._text_key)
+            docs.append(Document(page_content=text, metadata=metadata))
+        return docs
 
     def _select_relevance_score_fn(self) -> Callable[[float], float]:
         """
@@ -356,7 +368,7 @@ class Pinecone(VectorStore):
             # upsert to Pinecone
             _upsert_kwargs = upsert_kwargs or {}
             index.upsert(vectors=list(to_upsert), namespace=namespace, **_upsert_kwargs)
-        return cls(index, embedding.embed_query, text_key, namespace, **kwargs)
+        return [cls(index, embedding.embed_query, text_key, namespace, **kwargs), ids_batch]
 
     @classmethod
     def from_existing_index(
